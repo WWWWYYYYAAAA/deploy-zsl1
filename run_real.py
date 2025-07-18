@@ -327,10 +327,10 @@ if __name__ == "__main__":
                     padctrl()
                 # print(current_obs[:3] )
                 current_obs[:3] = cmd * cmd_scale
-                current_obs[3:6] = ang_vel #* ang_vel_scale
+                current_obs[3:6] = ang_vel * ang_vel_scale
                 current_obs[6:9] = gravity_orientation/9.81
-                current_obs[9 : 9 + num_actions] = (qj - default_angles) #* dof_pos_scale
-                current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj #* dof_vel_scale
+                current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
+                current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
                 current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
                 
                 # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
