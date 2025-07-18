@@ -1,14 +1,14 @@
 import sys
 import os
 
-from py_whl import mc_sdk_py
+import mc_sdk_py
 
 import time
 
 class MotorControl:
     def __init__(self):
         self.motor_func = mc_sdk_py.LowLevel()
-        self.motor_func.initRobot("192.168.234.17", 43988, "192.168.234.1") #local_ip, local_port, dog_ip
+        self.motor_func.initRobot("192.168.168.148", 43988, "192.168.168.168") #local_ip, local_port, dog_ip
         self.init_q_abad = [0.0] * 4
         self.init_q_hip = [0.0] * 4
         self.init_q_knee = [0.0] * 4
@@ -26,7 +26,7 @@ class MotorControl:
         while True:
             # 获取机器狗数据
             state = self.motor_func.getMotorState()
-
+            # print("state:", self.motor_func.haveMotorData())
             if self.motor_func.haveMotorData():
                 if not self.first_trigger:
                     self.first_trigger = True
@@ -37,6 +37,7 @@ class MotorControl:
 
                 self.stage1_progress += 0.002
                 ratio = self.stage1_progress / self.duration
+                print(ratio)
                 if ratio > 1.0:
                     ratio = 1.0
                     self.stage = 1
@@ -100,8 +101,9 @@ class MotorControl:
 
 if __name__ == "__main__":
     print("Initializing...")
-    time.sleep(10)
+    
     motor_control = MotorControl()
+    time.sleep(10)
     print("Initialization completed")
     try:
         motor_control.run()

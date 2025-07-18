@@ -4,6 +4,7 @@ import time
 # import mujoco
 import numpy as np
 # from legged_gym import LEGGED_GYM_ROOT_DIR
+from get_data_test import Accel
 import torch
 import yaml
 import mc_sdk_py
@@ -77,8 +78,6 @@ def padctrl():
     cmd[1] = -1.0*values[0][0]/100
     cmd[2] = 1.0*values[1][1]/100
 
-def get_data_from_dog():
-    acc_X = mc_sdk_py.get
 
 class MotorControl:
     def __init__(self):
@@ -97,6 +96,40 @@ class MotorControl:
         self.stage2_start = False
         self.first_trigger = False
 
+    def get_data_from_dog(self):
+        ang_vel = np.array((self.motor_func.getBodyGyroX(), self.motor_func.getBodyGyroY(), self.motor_func.getBodyGyroZ()))
+        gravity_orientation = np.array((self.motor_func.getBodyAccX(), self.motor_func.getBodyAccY(), self.motor_func.getBodyAccZ()))*-1.0
+        motorstate = self.motor_func.getMotorState()
+        q_abad = np.array(motorstate.q_abad)
+        q_hip = np.array(motorstate.q_hip)
+        q_knee = np.array(motorstate.q_knee)
+        qj = np.column_stack((q_abad, q_hip, q_knee)).flatten()
+        dq_abad = np.array(motorstate.qd_abad)
+        dq_hip = np.array(motorstate.qd_hip)
+        dq_knee = np.array(motorstate.qd_knee)
+        dqj = np.column_stack((dq_abad, dq_hip, dq_knee)).flatten()
+        
+        return ang_vel, gravity_orientation, qj, dqj
+    
+
+    def send_action(self, action):
+        action = action.reshape(4, 3)
+        cmd = mc_sdk_py.MotorCommand()
+        cmd.q_des_abad = action[:, 0]
+        cmd.q_des_hip = action[:, 1]
+        cmd.q_des_knee = action[:, 2]
+        cmd.kp_abad = np.ones(4) * 40.0
+        cmd.kp_hip = np.ones(4) * 40.0
+        cmd.kp_knee = np.ones(4) * 40.0
+        cmd.kd_abad = np.ones(4) * 1.0
+        cmd.kd_hip = np.ones(4) * 1.0
+        cmd.kd_knee = np.ones(4) * 1.0
+        
+        ret = self.motor_func.sendMotorCmd(cmd)
+        if ret < 0:
+            print("send cmd error")
+
+           
     def run(self):
         while True:
             # 获取机器狗数据
@@ -227,6 +260,7 @@ if __name__ == "__main__":
     emergency_stop = 1
     while emergency_stop:
         
+        ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
         if ctrl_f[1] == 0:
             padctrl()
         # print(current_obs[:3] )
@@ -244,4 +278,5 @@ if __name__ == "__main__":
         # policy inference
         action = policy(obs_tensor).detach().numpy().squeeze()
         target_dof_pos = action * action_scale + default_angles
+        
      
