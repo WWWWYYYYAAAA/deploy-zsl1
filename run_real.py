@@ -4,7 +4,7 @@ import time
 # import mujoco
 import numpy as np
 # from legged_gym import LEGGED_GYM_ROOT_DIR
-from get_data_test import Accel
+
 import torch
 import yaml
 import mc_sdk_py
@@ -115,21 +115,76 @@ class MotorControl:
     def send_action(self, action):
         action = action.reshape(4, 3)
         cmd = mc_sdk_py.MotorCommand()
-        cmd.q_des_abad = action[:, 0]
-        cmd.q_des_hip = action[:, 1]
-        cmd.q_des_knee = action[:, 2]
-        cmd.kp_abad = np.ones(4) * 40.0
-        cmd.kp_hip = np.ones(4) * 40.0
-        cmd.kp_knee = np.ones(4) * 40.0
-        cmd.kd_abad = np.ones(4) * 1.0
-        cmd.kd_hip = np.ones(4) * 1.0
-        cmd.kd_knee = np.ones(4) * 1.0
+        cmd.q_des_abad[:] = action[:, 0]
+        cmd.q_des_hip[:] = action[:, 1]
+        cmd.q_des_knee[:] = action[:, 2]
+        cmd.kp_abad[:] = np.ones(4) * 40.0
+        cmd.kp_hip[:] = np.ones(4) * 40.0
+        cmd.kp_knee[:] = np.ones(4) * 40.0
+        cmd.kd_abad[:] = np.ones(4) * 1.0
+        cmd.kd_hip[:] = np.ones(4) * 1.0
+        cmd.kd_knee[:] = np.ones(4) * 1.0
         
         ret = self.motor_func.sendMotorCmd(cmd)
         if ret < 0:
             print("send cmd error")
 
-           
+    def stand_smooth(self):
+        cnt = 0
+        while True:
+            # 获取机器狗数据
+            state = self.motor_func.getMotorState()
+
+            if self.motor_func.haveMotorData():
+                cnt += 1
+                if cnt == 4000:
+                    break
+                if not self.first_trigger:
+                    self.first_trigger = True
+                    for i in range(4):
+                        self.init_q_abad[i] = state.q_abad[i]
+                        self.init_q_hip[i] = state.q_hip[i]
+                        self.init_q_knee[i] = state.q_knee[i]
+
+                self.stage1_progress += 0.002
+                ratio = self.stage1_progress / self.duration
+                if ratio > 1.0:
+                    ratio = 1.0
+                    self.stage = 1
+                
+                if self.stage == 1:
+                    self.default_abad_pos = 0.0
+                    self.default_hip_pos = 0.8
+                    self.default_knee_pos = -1.5
+                    self.stage2_progress += 0.002
+                    ratio = self.stage2_progress / self.duration
+                    if ratio > 1.0:
+                        ratio = 1.0
+                    
+                    if not self.stage2_start:
+                        self.stage2_start = True
+                        for i in range(4):
+                            self.init_q_abad[i] = state.q_abad[i]
+                            self.init_q_hip[i] = state.q_hip[i]
+                            self.init_q_knee[i] = state.q_knee[i]
+
+                cmd = mc_sdk_py.MotorCommand()
+                for i in range(4):
+                    cmd.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
+                    cmd.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
+                    cmd.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
+                    cmd.kp_abad[i] = 80
+                    cmd.kp_hip[i] = 80
+                    cmd.kp_knee[i] = 80
+                    cmd.kd_abad[i] = 1
+                    cmd.kd_hip[i] = 1
+                    cmd.kd_knee[i] = 1
+
+                ret = self.motor_func.sendMotorCmd(cmd)
+                if ret < 0:
+                    print("send cmd error")
+
+            time.sleep(0.002)  # 等待 2 毫秒
     def run(self):
         while True:
             # 获取机器狗数据
@@ -243,7 +298,7 @@ if __name__ == "__main__":
     #lowlevel mc
     print("Initializing...")
     motor_control = MotorControl()
-    time.sleep(10)
+    time.sleep(5)
     print("Initialization completed")
 
     policy = torch.jit.load(policy_path)
@@ -258,25 +313,34 @@ if __name__ == "__main__":
 
     gamepad = F710GamePad()
     emergency_stop = 1
-    while emergency_stop:
-        
-        ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
-        if ctrl_f[1] == 0:
-            padctrl()
-        # print(current_obs[:3] )
-        current_obs[:3] = cmd * cmd_scale
-        current_obs[3:6] = ang_vel
-        current_obs[6:9] = gravity_orientation
-        current_obs[9 : 9 + num_actions] = qj
-        current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj
-        current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
-        
-        # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
-        obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
-        
-        obs_tensor = torch.from_numpy(obs).unsqueeze(0)
-        # policy inference
-        action = policy(obs_tensor).detach().numpy().squeeze()
-        target_dof_pos = action * action_scale + default_angles
-        
+    motor_control.stand_smooth()
+    print("standed")
+    try:
+        while emergency_stop and motor_control.motor_func.haveMotorData():
+            
+            ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
+            if ctrl_f[1] == 0:
+                padctrl()
+            # print(current_obs[:3] )
+            current_obs[:3] = cmd * cmd_scale
+            current_obs[3:6] = ang_vel
+            current_obs[6:9] = gravity_orientation
+            current_obs[9 : 9 + num_actions] = qj
+            current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj
+            current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
+            
+            # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
+            obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
+            
+            obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+            # policy inference
+            action = policy(obs_tensor).detach().numpy().squeeze()
+            target_dof_pos = action * action_scale + default_angles
+            print(target_dof_pos)
+            motor_control.send_action(target_dof_pos)
+            time.sleep(0.001)
+    
+    except KeyboardInterrupt:
+        motor_control.stop()
+        time.sleep(0.5)
      

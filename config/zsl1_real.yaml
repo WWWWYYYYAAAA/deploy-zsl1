@@ -1,5 +1,5 @@
-policy_path: "/home/wya/isaac/galileo_isaacgym/deploy/deploy_mujoco/model/zsl1/policy_12.pt"
-xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/zsl1/scene.xml"
+policy_path: "./model/policy.pt"
+# xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/zsl1/scene.xml"
 #resources/robots/galileo/scene_staris.xml
 #resources/robots/zsl-1/scene.xml
 # Total simulation time
