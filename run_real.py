@@ -319,7 +319,7 @@ if __name__ == "__main__":
     try:
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
-            start = time.time()
+            # start = time.time()
             if control_cnt % 50 == 0:
                 control_cnt = 0
                 ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
@@ -328,7 +328,7 @@ if __name__ == "__main__":
                 # print(current_obs[:3] )
                 current_obs[:3] = cmd * cmd_scale
                 current_obs[3:6] = ang_vel * ang_vel_scale
-                current_obs[6:9] = gravity_orientation
+                current_obs[6:9] = gravity_orientation/9.81
                 current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
                 current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
                 current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
@@ -340,11 +340,11 @@ if __name__ == "__main__":
                 # policy inference
                 action = policy(obs_tensor).detach().numpy().squeeze()
                 target_dof_pos = action * action_scale + default_angles
-                print(target_dof_pos)
+                print(current_obs)
             motor_control.send_action(target_dof_pos)
             time.sleep(0.002)
-            end = time.time()
-            print(end - start)
+            # end = time.time()
+            # print(end - start)
             control_cnt += 1
     
     except KeyboardInterrupt:
