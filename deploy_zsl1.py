@@ -174,7 +174,7 @@ if __name__ == "__main__":
             current_obs[:3] = cmd * cmd_scale
             current_obs[3:6] = ang_vel
             current_obs[6:9] = gravity_orientation
-            current_obs[9 : 9 + num_actions] = qj
+            current_obs[9 : 9 + num_actions] = qj 
             current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj
             current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
             

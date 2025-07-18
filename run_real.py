@@ -173,9 +173,9 @@ class MotorControl:
                     cmd.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
                     cmd.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
                     cmd.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
-                    cmd.kp_abad[i] = 80
-                    cmd.kp_hip[i] = 80
-                    cmd.kp_knee[i] = 80
+                    cmd.kp_abad[i] = 40
+                    cmd.kp_hip[i] = 40
+                    cmd.kp_knee[i] = 40
                     cmd.kd_abad[i] = 1
                     cmd.kd_hip[i] = 1
                     cmd.kd_knee[i] = 1
@@ -315,32 +315,39 @@ if __name__ == "__main__":
     emergency_stop = 1
     motor_control.stand_smooth()
     print("standed")
+    control_cnt = 0
     try:
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
-            ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
-            if ctrl_f[1] == 0:
-                padctrl()
-            # print(current_obs[:3] )
-            current_obs[:3] = cmd * cmd_scale
-            current_obs[3:6] = ang_vel
-            current_obs[6:9] = gravity_orientation
-            current_obs[9 : 9 + num_actions] = qj
-            current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj
-            current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
-            
-            # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
-            obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
-            
-            obs_tensor = torch.from_numpy(obs).unsqueeze(0)
-            # policy inference
-            action = policy(obs_tensor).detach().numpy().squeeze()
-            target_dof_pos = action * action_scale + default_angles
-            print(target_dof_pos)
+            start = time.time()
+            if control_cnt % 50 == 0:
+                control_cnt = 0
+                ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
+                if ctrl_f[1] == 0:
+                    padctrl()
+                # print(current_obs[:3] )
+                current_obs[:3] = cmd * cmd_scale
+                current_obs[3:6] = ang_vel * ang_vel_scale
+                current_obs[6:9] = gravity_orientation
+                current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
+                current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
+                current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
+                
+                # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
+                obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
+                
+                obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+                # policy inference
+                action = policy(obs_tensor).detach().numpy().squeeze()
+                target_dof_pos = action * action_scale + default_angles
+                print(target_dof_pos)
             motor_control.send_action(target_dof_pos)
-            time.sleep(0.001)
+            time.sleep(0.002)
+            end = time.time()
+            print(end - start)
+            control_cnt += 1
     
     except KeyboardInterrupt:
         motor_control.stop()
-        time.sleep(0.5)
+        time.sleep(0.1)
      
