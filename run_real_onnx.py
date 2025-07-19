@@ -10,7 +10,7 @@ import yaml
 import mc_sdk_py
 import time
 import math
-
+import onnxruntime as ort
 
 
 def get_gravity_orientation(quaternion):
@@ -282,7 +282,7 @@ class MotorControl:
             time.sleep(0.002)  # 等待 2 毫秒
 
 if __name__ == "__main__":
-    config_file = "zsl1_real.yaml"
+    config_file = "zsl1_real_onnx.yaml"
     with open(f"./config/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         policy_path = config["policy_path"]
@@ -322,8 +322,10 @@ if __name__ == "__main__":
     time.sleep(2)
     print("Initialization completed")
 
-    policy = torch.jit.load(policy_path)
-    policy.eval()
+    # policy = torch.jit.load(policy_path)
+    # policy.eval()
+    policy = ort.InferenceSession(policy_path)
+    input_name = policy.get_inputs()[0].name
     #ctrl
     from pynput import keyboard
 
@@ -364,13 +366,15 @@ if __name__ == "__main__":
                 # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
                 obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
                 
-                obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+                # obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+                
                 # policy inference
-                action = policy(obs_tensor).detach().numpy().squeeze()
+                # action = policy(obs_tensor).detach().numpy().squeeze()
+                action = policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0]
                 target_dof_pos = action * action_scale + default_angles
                 # print(current_obs)
             motor_control.send_action(target_dof_pos)
-            time.sleep(0.001)
+            time.sleep(0.002)
             # end = time.time()
             # print(end - start)
             control_cnt += 1
