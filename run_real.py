@@ -96,8 +96,9 @@ class MotorControl:
         self.init_q_knee = [0.0] * 4
         self.duration = 2.0
         self.default_abad_pos = 0.0
-        self.default_hip_pos = 1.4
-        self.default_knee_pos = -2.4
+        self.default_hip_pos = 2.0
+        self.default_knee_pos = -2.7
+        self.default_hip_pos_list = [0.6, 0.6, 1.15, 1.15]
         self.stage1_progress = 0.0
         self.stage2_progress = 0.0
         self.stage = 0
@@ -131,18 +132,22 @@ class MotorControl:
         cmd_mc.q_des_abad[:] = action[[1, 0, 3, 2], 0]
         cmd_mc.q_des_hip[:] = action[[1, 0, 3, 2], 1]
         cmd_mc.q_des_knee[:] = action[[1, 0, 3, 2], 2]
+        # cmd_mc.q_des_knee[:] = np.clip(action[[1, 0, 3, 2], 2], -2.85, 0.6)
+        # print(cmd_mc.q_des_knee[:])
         cmd_mc.kp_abad[:] = np.array([40, 40, 40, 40])
-        cmd_mc.kp_hip[:] = np.array([40, 40, 40, 40])
-        cmd_mc.kp_knee[:] = np.array([40, 40, 50, 50])
+        cmd_mc.kp_hip[:] = np.array([45, 45, 55, 55])
+        cmd_mc.kp_knee[:] = np.array([45, 45, 55, 55])
         cmd_mc.kd_abad[:] = np.ones(4) * 1.0
-        cmd_mc.kd_hip[:] = np.ones(4) * 0.5
+        cmd_mc.kd_hip[:] = np.ones(4) * 0.65
         cmd_mc.kd_knee[:] = np.ones(4) * 0.5
         
         ret = self.motor_func.sendMotorCmd(cmd_mc)
         if ret < 0:
             print("send cmd error")
 
+    
     def stand_smooth(self):
+        self.stage1_progress = 0.0
         cnt = 0
         while True:
             # 获取机器狗数据
@@ -150,7 +155,7 @@ class MotorControl:
 
             if self.motor_func.haveMotorData():
                 cnt += 1
-                if cnt == 4000:
+                if cnt == 3500:
                     break
                 if not self.first_trigger:
                     self.first_trigger = True
@@ -167,7 +172,7 @@ class MotorControl:
                 
                 if self.stage == 1:
                     self.default_abad_pos = 0.0
-                    self.default_hip_pos = 0.8
+                    self.default_hip_pos = 0.85
                     self.default_knee_pos = -1.5
                     self.stage2_progress += 0.002
                     ratio = self.stage2_progress / self.duration
@@ -184,7 +189,10 @@ class MotorControl:
                 cmd_mc = mc_sdk_py.MotorCommand()
                 for i in range(4):
                     cmd_mc.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
-                    cmd_mc.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
+                    if self.stage == 1:
+                        cmd_mc.q_des_hip[i] = ratio * self.default_hip_pos_list[i] + (1.0 - ratio) * self.init_q_hip[i]
+                    else:
+                        cmd_mc.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
                     cmd_mc.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
                     cmd_mc.kp_abad[i] = 40
                     cmd_mc.kp_hip[i] = 40
@@ -333,14 +341,17 @@ if __name__ == "__main__":
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
             # start = time.time()
-            if control_cnt % 25 == 0:
+            if control_cnt % 20 == 0:
                 control_cnt = 0
                 ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
+                last_cmd = cmd
                 if ctrl_f[1] == 0:
                     # cmd = padctrl(cmd)
                     padctrl()
                 # print(current_obs[:3] )
-                print(cmd)
+                ratio = 0.1
+                cmd[:1] = cmd[:1] * ratio + last_cmd[:1] * (1 - ratio)
+                # print(cmd)
                 current_obs[:3] = cmd * cmd_scale
                 current_obs[3:6] = ang_vel * ang_vel_scale
                 # current_obs[3:6] = np.array([0,0,0])
@@ -359,7 +370,7 @@ if __name__ == "__main__":
                 target_dof_pos = action * action_scale + default_angles
                 # print(current_obs)
             motor_control.send_action(target_dof_pos)
-            time.sleep(0.002)
+            time.sleep(0.001)
             # end = time.time()
             # print(end - start)
             control_cnt += 1
