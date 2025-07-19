@@ -9,7 +9,7 @@ import torch
 import yaml
 import mc_sdk_py
 import time
-
+import math
 
 
 
@@ -72,11 +72,19 @@ def on_release(key):
         ctrl_f[0] = 0
         cmd[2] = 0.0
 
+# def padctrl(cmdctrl):
+#     # last_cmd = cmd
+#     ratio = 0.1
+#     values = gamepad.GetInput(joyL=1,joyR=1,trigL=1,trigR=1,buttons=1,hat=1,joyL_max=100,os='linux')
+#     cmdctrl[0] = 1.0*values[0][1]/100*ratio+cmdctrl[0]*(1-ratio)
+#     cmdctrl[1] = -1.0*values[0][0]/100*ratio+cmdctrl[1]*(1-ratio)
+#     cmdctrl[2] = 1.0*values[1][1]/100*ratio+cmdctrl[2]*(1-ratio)
+#     return cmdctrl
 def padctrl():
     values = gamepad.GetInput(joyL=1,joyR=1,trigL=1,trigR=1,buttons=1,hat=1,joyL_max=100,os='linux')
-    cmd[0] = 1.0*values[0][1]/100
-    cmd[1] = -1.0*values[0][0]/100
-    cmd[2] = 1.0*values[1][1]/100
+    cmd[0] = 1.0*float(values[0][1])/100.0
+    cmd[1] = -1.0*float(values[0][0])/100.0
+    cmd[2] = 1.0*float(values[1][1])/100.0
 
 
 class MotorControl:
@@ -98,34 +106,39 @@ class MotorControl:
 
     def get_data_from_dog(self):
         ang_vel = np.array((self.motor_func.getBodyGyroX(), self.motor_func.getBodyGyroY(), self.motor_func.getBodyGyroZ()))
-        gravity_orientation = np.array((self.motor_func.getBodyAccX(), self.motor_func.getBodyAccY(), self.motor_func.getBodyAccZ()))*-1.0
+        # gravity_orientation = np.array((self.motor_func.getBodyAccX(), self.motor_func.getBodyAccY(), self.motor_func.getBodyAccZ()))*-1.0
+        roll = self.motor_func.getRoll()
+        pitch = self.motor_func.getPitch()
+        # yaw = self.motor_func.getYaw()
+        gravity_orientation = np.array([math.sin(pitch), -math.sin(roll) * math.cos(pitch), -math.cos(roll) * math.cos(pitch)])
+        
         motorstate = self.motor_func.getMotorState()
         q_abad = np.array(motorstate.q_abad)
         q_hip = np.array(motorstate.q_hip)
         q_knee = np.array(motorstate.q_knee)
-        qj = np.column_stack((q_abad, q_hip, q_knee)).flatten()
+        qj = np.column_stack((q_abad, q_hip, q_knee)).flatten()[[3,4,5,0,1,2,9,10,11,6,7,8]]
         dq_abad = np.array(motorstate.qd_abad)
         dq_hip = np.array(motorstate.qd_hip)
         dq_knee = np.array(motorstate.qd_knee)
-        dqj = np.column_stack((dq_abad, dq_hip, dq_knee)).flatten()
+        dqj = np.column_stack((dq_abad, dq_hip, dq_knee)).flatten()[[3,4,5,0,1,2,9,10,11,6,7,8]]
         
         return ang_vel, gravity_orientation, qj, dqj
     
 
     def send_action(self, action):
         action = action.reshape(4, 3)
-        cmd = mc_sdk_py.MotorCommand()
-        cmd.q_des_abad[:] = action[:, 0]
-        cmd.q_des_hip[:] = action[:, 1]
-        cmd.q_des_knee[:] = action[:, 2]
-        cmd.kp_abad[:] = np.ones(4) * 40.0
-        cmd.kp_hip[:] = np.ones(4) * 40.0
-        cmd.kp_knee[:] = np.ones(4) * 40.0
-        cmd.kd_abad[:] = np.ones(4) * 1.0
-        cmd.kd_hip[:] = np.ones(4) * 1.0
-        cmd.kd_knee[:] = np.ones(4) * 1.0
+        cmd_mc = mc_sdk_py.MotorCommand()
+        cmd_mc.q_des_abad[:] = action[[1, 0, 3, 2], 0]
+        cmd_mc.q_des_hip[:] = action[[1, 0, 3, 2], 1]
+        cmd_mc.q_des_knee[:] = action[[1, 0, 3, 2], 2]
+        cmd_mc.kp_abad[:] = np.array([40, 40, 40, 40])
+        cmd_mc.kp_hip[:] = np.array([40, 40, 40, 40])
+        cmd_mc.kp_knee[:] = np.array([40, 40, 50, 50])
+        cmd_mc.kd_abad[:] = np.ones(4) * 1.0
+        cmd_mc.kd_hip[:] = np.ones(4) * 0.5
+        cmd_mc.kd_knee[:] = np.ones(4) * 0.5
         
-        ret = self.motor_func.sendMotorCmd(cmd)
+        ret = self.motor_func.sendMotorCmd(cmd_mc)
         if ret < 0:
             print("send cmd error")
 
@@ -168,19 +181,19 @@ class MotorControl:
                             self.init_q_hip[i] = state.q_hip[i]
                             self.init_q_knee[i] = state.q_knee[i]
 
-                cmd = mc_sdk_py.MotorCommand()
+                cmd_mc = mc_sdk_py.MotorCommand()
                 for i in range(4):
-                    cmd.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
-                    cmd.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
-                    cmd.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
-                    cmd.kp_abad[i] = 40
-                    cmd.kp_hip[i] = 40
-                    cmd.kp_knee[i] = 40
-                    cmd.kd_abad[i] = 1
-                    cmd.kd_hip[i] = 1
-                    cmd.kd_knee[i] = 1
+                    cmd_mc.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
+                    cmd_mc.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
+                    cmd_mc.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
+                    cmd_mc.kp_abad[i] = 40
+                    cmd_mc.kp_hip[i] = 40
+                    cmd_mc.kp_knee[i] = 40
+                    cmd_mc.kd_abad[i] = 1
+                    cmd_mc.kd_hip[i] = 1
+                    cmd_mc.kd_knee[i] = 1
 
-                ret = self.motor_func.sendMotorCmd(cmd)
+                ret = self.motor_func.sendMotorCmd(cmd_mc)
                 if ret < 0:
                     print("send cmd error")
 
@@ -220,39 +233,39 @@ class MotorControl:
                             self.init_q_hip[i] = state.q_hip[i]
                             self.init_q_knee[i] = state.q_knee[i]
 
-                cmd = mc_sdk_py.MotorCommand()
+                cmd_mc = mc_sdk_py.MotorCommand()
                 for i in range(4):
-                    cmd.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
-                    cmd.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
-                    cmd.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
-                    cmd.kp_abad[i] = 80
-                    cmd.kp_hip[i] = 80
-                    cmd.kp_knee[i] = 80
-                    cmd.kd_abad[i] = 1
-                    cmd.kd_hip[i] = 1
-                    cmd.kd_knee[i] = 1
+                    cmd_mc.q_des_abad[i] = ratio * self.default_abad_pos + (1.0 - ratio) * self.init_q_abad[i]
+                    cmd_mc.q_des_hip[i] = ratio * self.default_hip_pos + (1.0 - ratio) * self.init_q_hip[i]
+                    cmd_mc.q_des_knee[i] = ratio * self.default_knee_pos + (1.0 - ratio) * self.init_q_knee[i]
+                    cmd_mc.kp_abad[i] = 80
+                    cmd_mc.kp_hip[i] = 80
+                    cmd_mc.kp_knee[i] = 80
+                    cmd_mc.kd_abad[i] = 1
+                    cmd_mc.kd_hip[i] = 1
+                    cmd_mc.kd_knee[i] = 1
 
-                ret = self.motor_func.sendMotorCmd(cmd)
+                ret = self.motor_func.sendMotorCmd(cmd_mc)
                 if ret < 0:
                     print("send cmd error")
 
             time.sleep(0.002)  # 等待 2 毫秒
     def stop(self):
-        cmd = mc_sdk_py.MotorCommand()
+        cmd_mc = mc_sdk_py.MotorCommand()
         for i in range(4):
-            cmd.q_des_abad[i] = 0.0
-            cmd.q_des_hip[i] = 0.0
-            cmd.q_des_knee[i] = -1.5
-            cmd.kp_abad[i] = 0.0
-            cmd.kp_hip[i] = 0.0
-            cmd.kp_knee[i] = 0.0
-            cmd.kd_abad[i] = 3.0
-            cmd.kd_hip[i] = 3.0
-            cmd.kd_knee[i] = 3.0
+            cmd_mc.q_des_abad[i] = 0.0
+            cmd_mc.q_des_hip[i] = 0.0
+            cmd_mc.q_des_knee[i] = -1.5
+            cmd_mc.kp_abad[i] = 0.0
+            cmd_mc.kp_hip[i] = 0.0
+            cmd_mc.kp_knee[i] = 0.0
+            cmd_mc.kd_abad[i] = 3.0
+            cmd_mc.kd_hip[i] = 3.0
+            cmd_mc.kd_knee[i] = 3.0
         flag = True
         send_msg_count = 0
         while flag:
-            ret = self.motor_func.sendMotorCmd(cmd)
+            ret = self.motor_func.sendMotorCmd(cmd_mc)
             if ret < 0:
                 print("send cmd error")
             send_msg_count += 1
@@ -298,7 +311,7 @@ if __name__ == "__main__":
     #lowlevel mc
     print("Initializing...")
     motor_control = MotorControl()
-    time.sleep(5)
+    time.sleep(2)
     print("Initialization completed")
 
     policy = torch.jit.load(policy_path)
@@ -320,15 +333,19 @@ if __name__ == "__main__":
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
             # start = time.time()
-            if control_cnt % 50 == 0:
+            if control_cnt % 25 == 0:
                 control_cnt = 0
                 ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
                 if ctrl_f[1] == 0:
+                    # cmd = padctrl(cmd)
                     padctrl()
                 # print(current_obs[:3] )
+                print(cmd)
                 current_obs[:3] = cmd * cmd_scale
                 current_obs[3:6] = ang_vel * ang_vel_scale
-                current_obs[6:9] = gravity_orientation/9.81
+                # current_obs[3:6] = np.array([0,0,0])
+                current_obs[6:9] = gravity_orientation
+                # current_obs[6:9] = np.array([0,0,-1])
                 current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
                 current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
                 current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
@@ -340,7 +357,7 @@ if __name__ == "__main__":
                 # policy inference
                 action = policy(obs_tensor).detach().numpy().squeeze()
                 target_dof_pos = action * action_scale + default_angles
-                print(current_obs)
+                # print(current_obs)
             motor_control.send_action(target_dof_pos)
             time.sleep(0.002)
             # end = time.time()
