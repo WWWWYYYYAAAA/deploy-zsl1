@@ -1,4 +1,4 @@
-policy_path: "./model/policy_4.pt"
+policy_path: "./model/policy_1.pt"
 # xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/zsl1/scene.xml"
 #resources/robots/galileo/scene_staris.xml
 #resources/robots/zsl-1/scene.xml

@@ -10,7 +10,7 @@ import yaml
 import mc_sdk_py
 import time
 import math
-import onnxruntime as ort
+
 
 
 def get_gravity_orientation(quaternion):
@@ -39,22 +39,34 @@ ctrl_f = [0,0] # ctrl_f key_f
 
 def on_press(key):
     ctrl_f[1]=1
-    if key == keyboard.Key.up:
-        cmd[0] = 1.0
-    elif key == keyboard.Key.down:
-        cmd[0] = -1.0
+    # if key == keyboard.Key.up:
+    #     cmd[0] = 1.0
+    # elif key == keyboard.Key.down:
+    #     cmd[0] = -1.0
+    # if key == keyboard.Key.left:
+    #     if ctrl_f[0] == 0:
+    #         cmd[1] = 1.0
+    #     else:
+    #         cmd[2] = 1.0
+    # elif key == keyboard.Key.right:
+    #     if ctrl_f[0] == 0:
+    #         cmd[1] = -1.0
+    #     else:
+    #         cmd[2] = -1.0
+    # if key == keyboard.Key.ctrl:
+    #     ctrl_f[0] = 1
     if key == keyboard.Key.left:
-        if ctrl_f[0] == 0:
-            cmd[1] = 1.0
-        else:
-            cmd[2] = 1.0
-    elif key == keyboard.Key.right:
-        if ctrl_f[0] == 0:
-            cmd[1] = -1.0
-        else:
-            cmd[2] = -1.0
-    if key == keyboard.Key.ctrl:
-        ctrl_f[0] = 1
+        cmd[0] = 1.0
+        cmd[1] = 0.0
+        cmd[2] = 0.0
+    if key == keyboard.Key.down:
+        cmd[0] = 0.0
+        cmd[1] = 1.0
+        cmd[2] = 0.0
+    if key == keyboard.Key.right:
+        cmd[0] = 0.0
+        cmd[1] = 0.0
+        cmd[2] = 1.0
 
 def on_release(key):
     ctrl_f[1]=0
@@ -130,10 +142,9 @@ class MotorControl:
         action = action.reshape(4, 3)
         cmd_mc = mc_sdk_py.MotorCommand()
         cmd_mc.q_des_abad[:] = action[[1, 0, 3, 2], 0]
-        cmd_mc.q_des_abad[:] = np.clip(action[[1, 0, 3, 2], 0], -0.4, 0.4)
         cmd_mc.q_des_hip[:] = action[[1, 0, 3, 2], 1]
         cmd_mc.q_des_knee[:] = action[[1, 0, 3, 2], 2]
-        # cmd_mc.q_des_knee[:] = np.clip(action[[1, 0, 3, 2], 2], -2.7, 0.5)
+        # cmd_mc.q_des_knee[:] = np.clip(action[[1, 0, 3, 2], 2], -2.85, 0.6)
         # print(cmd_mc.q_des_knee[:])
         cmd_mc.kp_abad[:] = np.array([40, 40, 40, 40])
         cmd_mc.kp_hip[:] = np.array([45, 45, 55, 55])
@@ -283,7 +294,7 @@ class MotorControl:
             time.sleep(0.002)  # 等待 2 毫秒
 
 if __name__ == "__main__":
-    config_file = "zsl1_real_onnx.yaml"
+    config_file = "zsl1_real_rec.yaml"
     with open(f"./config/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         policy_path = config["policy_path"]
@@ -310,7 +321,7 @@ if __name__ == "__main__":
         
         # cmd = np.array(config["cmd_init"], dtype=np.float32)
 
-    cmd = np.array([0,0,0])
+    cmd = np.array([1,0,0])
     # define context variables
     action = np.zeros(num_actions, dtype=np.float32)
     target_dof_pos = default_angles.copy()
@@ -323,19 +334,17 @@ if __name__ == "__main__":
     time.sleep(2)
     print("Initialization completed")
 
-    # policy = torch.jit.load(policy_path)
-    # policy.eval()
-    policy = ort.InferenceSession(policy_path)
-    input_name = policy.get_inputs()[0].name
+    policy = torch.jit.load(policy_path)
+    policy.eval()
     #ctrl
     from pynput import keyboard
 
-    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener = keyboard.Listener(on_press=on_press)
     listener.start()
 
-    from F710GamePad import F710GamePad
+    # from F710GamePad import F710GamePad
 
-    gamepad = F710GamePad()
+    # gamepad = F710GamePad()
     emergency_stop = 1
     motor_control.stand_smooth()
     print("standed")
@@ -344,16 +353,16 @@ if __name__ == "__main__":
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
             # start = time.time()
-            if control_cnt % 10 == 0:
+            if control_cnt % 20 == 0:
                 control_cnt = 0
                 ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
                 last_cmd = cmd
-                if ctrl_f[1] == 0:
-                    # cmd = padctrl(cmd)
-                    padctrl()
+                # if ctrl_f[1] == 0:
+                #     # cmd = padctrl(cmd)
+                #     padctrl()
                 # print(current_obs[:3] )
-                ratio = 0.1
-                cmd[:1] = cmd[:1] * ratio + last_cmd[:1] * (1 - ratio)
+                ratio = 0.03
+                cmd[:2] = cmd[:2] * ratio + last_cmd[:2] * (1 - ratio)
                 # print(cmd)
                 current_obs[:3] = cmd * cmd_scale
                 current_obs[3:6] = ang_vel * ang_vel_scale
@@ -367,15 +376,13 @@ if __name__ == "__main__":
                 # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
                 obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
                 
-                # obs_tensor = torch.from_numpy(obs).unsqueeze(0)
-                
+                obs_tensor = torch.from_numpy(obs).unsqueeze(0)
                 # policy inference
-                # action = policy(obs_tensor).detach().numpy().squeeze()
-                action = policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0]
+                action = policy(obs_tensor).detach().numpy().squeeze()
                 target_dof_pos = action * action_scale + default_angles
                 # print(current_obs)
             motor_control.send_action(target_dof_pos)
-            time.sleep(0.002)
+            time.sleep(0.001)
             # end = time.time()
             # print(end - start)
             control_cnt += 1

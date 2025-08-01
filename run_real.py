@@ -349,8 +349,8 @@ if __name__ == "__main__":
                     # cmd = padctrl(cmd)
                     padctrl()
                 # print(current_obs[:3] )
-                ratio = 0.1
-                cmd[:1] = cmd[:1] * ratio + last_cmd[:1] * (1 - ratio)
+                ratio = 0.03
+                cmd[:2] = cmd[:2] * ratio + last_cmd[:2] * (1 - ratio)
                 # print(cmd)
                 current_obs[:3] = cmd * cmd_scale
                 current_obs[3:6] = ang_vel * ang_vel_scale
