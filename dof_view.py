@@ -4,7 +4,7 @@ import time
 import math
 
 motor_func = mc_sdk_py.LowLevel()
-motor_func.initRobot("192.168.168.148", 43988, "192.168.168.168") #local_ip, local_port, dog_ip
+motor_func.initRobot("192.168.168.99", 43988, "192.168.168.168") #local_ip, local_port, dog_ip
 
 def get_data_from_dog():
     ang_vel = np.array((motor_func.getBodyGyroX(), motor_func.getBodyGyroY(), motor_func.getBodyGyroZ()))

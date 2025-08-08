@@ -2,7 +2,7 @@ import torch
 import torch.onnx
 
 # 1. 加载ONNX模型
-model = torch.onnx.load("./onnx/policy_4.onnx")
+model = torch.torch.jit.load('./model/policy_4.pt')
 
 # 2. 验证模型
 torch.onnx.checker.check_model(model)

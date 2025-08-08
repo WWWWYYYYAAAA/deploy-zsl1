@@ -4,7 +4,7 @@ import time
 # import mujoco
 import numpy as np
 # from legged_gym import LEGGED_GYM_ROOT_DIR
-
+import threading
 import torch
 import yaml
 import mc_sdk_py
@@ -281,7 +281,17 @@ class MotorControl:
                 flag = False
             time.sleep(0.002)  # 等待 2 毫秒
 
+
+target_dof_pos = np.zeros(12)
+
+def send_task():
+    global target_dof_pos
+    while emergency_stop and motor_control.motor_func.haveMotorData():
+        motor_control.send_action(target_dof_pos)
+        time.sleep(0.002)
+        
 if __name__ == "__main__":
+    
     config_file = "zsl1_real.yaml"
     with open(f"./config/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -337,43 +347,46 @@ if __name__ == "__main__":
     motor_control.stand_smooth()
     print("standed")
     control_cnt = 0
+    sendData = threading.Thread(target=send_task)
+    sendData.start()
+    print("begin to send")
     try:
         while emergency_stop and motor_control.motor_func.haveMotorData():
             
             # start = time.time()
-            if control_cnt % 20 == 0:
-                control_cnt = 0
-                ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
-                last_cmd = cmd
-                if ctrl_f[1] == 0:
-                    # cmd = padctrl(cmd)
-                    padctrl()
-                # print(current_obs[:3] )
-                ratio = 0.03
-                cmd[:2] = cmd[:2] * ratio + last_cmd[:2] * (1 - ratio)
-                # print(cmd)
-                current_obs[:3] = cmd * cmd_scale
-                current_obs[3:6] = ang_vel * ang_vel_scale
-                # current_obs[3:6] = np.array([0,0,0])
-                current_obs[6:9] = gravity_orientation
-                # current_obs[6:9] = np.array([0,0,-1])
-                current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
-                current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
-                current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
-                
-                # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
-                obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
-                
-                obs_tensor = torch.from_numpy(obs).unsqueeze(0)
-                # policy inference
-                action = policy(obs_tensor).detach().numpy().squeeze()
-                target_dof_pos = action * action_scale + default_angles
+            # if control_cnt % 20 == 0:
+            control_cnt = 0
+            ang_vel, gravity_orientation, qj, dqj = motor_control.get_data_from_dog()
+            last_cmd = cmd
+            if ctrl_f[1] == 0:
+                # cmd = padctrl(cmd)
+                padctrl()
+            # print(current_obs[:3] )
+            ratio = 0.03
+            cmd[:2] = cmd[:2] * ratio + last_cmd[:2] * (1 - ratio)
+            # print(cmd)
+            current_obs[:3] = cmd * cmd_scale
+            current_obs[3:6] = ang_vel * ang_vel_scale
+            # current_obs[3:6] = np.array([0,0,0])
+            current_obs[6:9] = gravity_orientation
+            # current_obs[6:9] = np.array([0,0,-1])
+            current_obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
+            current_obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
+            current_obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
+            
+            # 将当前观测数据添加到 obs 的开头，并将历史数据向前移动
+            obs = np.concatenate((current_obs, obs[:-num_one_step_obs]))
+            
+            obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+            # policy inference
+            action = policy(obs_tensor).detach().numpy().squeeze()
+            target_dof_pos = action * action_scale + default_angles
                 # print(current_obs)
-            motor_control.send_action(target_dof_pos)
-            time.sleep(0.001)
+            # motor_control.send_action(target_dof_pos)
+            time.sleep(0.02)
             # end = time.time()
             # print(end - start)
-            control_cnt += 1
+            # control_cnt += 1
     
     except KeyboardInterrupt:
         motor_control.stop()
