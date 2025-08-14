@@ -321,7 +321,7 @@ if __name__ == "__main__":
         
         # cmd = np.array(config["cmd_init"], dtype=np.float32)
 
-    cmd = np.array([1,0,0])
+    cmd = np.array([1.0,0.0,0.0])
     # define context variables
     action = np.zeros(num_actions, dtype=np.float32)
     target_dof_pos = default_angles.copy()
